@@ -1,0 +1,12 @@
+# Latex Files to Ignore #
+#########################
+*.aux
+*.log
+*.maf
+*.mtc
+*.mtc*
+*.stc?
+*.out
+*.gz
+*.toc
+build

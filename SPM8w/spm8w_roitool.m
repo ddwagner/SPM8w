@@ -82,10 +82,16 @@ switch (nargin)
     r.spec_file = '';   
   case 3
     r = spm8w_getp('ROI', '', varargin{1}); 
-    %override spec file and roi_specs. Assume roi size z =zzof 6mm.
+    %override spec file and roi_specs. Catch in case of image mask(i.e.
+    %don't mat2str). 
+    if isnumeric(varargin{3})
+        radius = mat2str(varargin{3});
+    else
+        radius = varargin{3};
+    end
     r.roi_specs = {sprintf('Regionv: %s', varargin{2})
                    varargin{2} 
-                   mat2str(varargin{3})}';
+                   radius}';
     r.spec_file = '';       
   otherwise
     error('You''ve specified too many inputs. Only specify ROI_para.m file.');

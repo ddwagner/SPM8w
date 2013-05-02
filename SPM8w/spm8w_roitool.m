@@ -64,7 +64,10 @@ function roidata=spm8w_roitool(varargin)
 % -Added xls file support for ROI specs if desired - DDW March/13
 % -If more than 2 groups, performs between group t-ttests on all possible
 % pairs. - DDW March/13
-% -Added support for single coordinate. -DDW March/13
+% -Added support for single coordinate or mask img. -DDW March/13
+% -Incorporated new roigen tool replacing make_sphare_mask. Also faster if
+% called correctly (i.e., give it lists of files, don't call it every
+% single subject or it will be slower than old method). -DDW April/13
 % =======1=========2=========3=========4=========5=========6=========7=========8
 
 %---Input checks
@@ -82,10 +85,16 @@ switch (nargin)
     r.spec_file = '';   
   case 3
     r = spm8w_getp('ROI', '', varargin{1}); 
-    %override spec file and roi_specs. Assume roi size z =zzof 6mm.
+    %override spec file and roi_specs. Catch in case of image mask(i.e.
+    %don't mat2str). 
+    if isnumeric(varargin{3})
+        radius = mat2str(varargin{3});
+    else
+        radius = varargin{3};
+    end
     r.roi_specs = {sprintf('Regionv: %s', varargin{2})
                    varargin{2} 
-                   mat2str(varargin{3})}';
+                   radius}';
     r.spec_file = '';       
   otherwise
     error('You''ve specified too many inputs. Only specify ROI_para.m file.');
@@ -118,13 +127,11 @@ start_time = datestr(now);
 fprintf('\n==========Extracting parameter estimates from ROIs at %s\n', start_time); 
 %--Get the con images
 conlist = cell(1,size(r.conditions,1));
-con_vol = cell(1,size(r.conditions,1));
 for i=1:size(r.conditions,1)
     fprintf('Loading contrast files for condition: %s\n',r.conditions{i});
     %Super regxp hack to get the proper con files, should never fail -DDW
     %fixed to make sure we never load the con_0002.img MARCH 2010DDW
     conlist{i} = spm_select('FPList',fullfile(r.rfx_dir,r.conditions{i}),'^con_.*_\d\d\d\d\.img'); 
-    con_vol{i} = spm_vol(conlist{i});
 end
 
 %---Generate r.roi_specs from file or from user varible
@@ -172,47 +179,39 @@ try delete('*.nii'); end
 
 %---Loop through each cluster creating or loading ROI and extracting data
 for iclust = 1:nclust 
-    %--Figure out if img files or spherical ROI diameter
     if ~isempty(str2num(r.roi_specs{iclust,3}))
-        %-Make spherical ROI
-        fprintf('Making spherical ROI (%smm) for %s centered at:%s\n',...
-            r.roi_specs{iclust,3},...
-            r.roi_specs{iclust},...
-            r.roi_specs{iclust,2});
-        %-Here is temp code for the doughnut hack that sort of worked (i.e., punching a hole out of the ROI
-        %-using a smaller ROI. I should revisit this sometime. Sept, 2012-DDW
-        centersize = 0;
-        sphere1    = make_sphere_mask([str2num(r.roi_specs{iclust,2})],str2num(r.roi_specs{iclust,3}),r.standard_space,r.roi_specs{iclust});
-        if centersize == 0
-            newmaskimg = sphere1.maskimg;
-        else
-            sphere2    = make_sphere_mask([str2num(r.roi_specs{iclust,2})],centersize,r.standard_space,r.roi_specs{iclust});
-            newmaskimg = sphere1.maskimg - sphere2.maskimg;
-        end  
-        fprintf('Number of voxels in ROI: %d\n',numel(newmaskimg(newmaskimg==1)));
-        sphere1.v.fname = sprintf('sphere_%s_%d_%d_%d.nii',r.roi_specs{iclust},str2num(r.roi_specs{iclust,2}));   
-        spm_write_vol(sphere1.v,newmaskimg);     
-        fname = sprintf('sphere_%s_%d_%d_%d.nii',r.roi_specs{iclust},str2num(r.roi_specs{iclust,2}));
-        clust_vol(iclust) = spm_vol(spm_select('FPList',r.roi,fname));
+        roi_coord = str2num(r.roi_specs{iclust,2});
+        roi_radius = str2num(r.roi_specs{iclust,3});
     else
-        %-Load img file
-        fprintf('Loading ROI mask %s in %s\n',r.roi_specs{iclust,3},r.roi_img);
-        clust_vol(iclust) = spm_vol(spm_select('FPList',r.roi_img,r.roi_specs{iclust,3}));
-    end
-    %--Read in the current ROI mask
-    clust_data = spm_read_vols(clust_vol(iclust));
-    roi        = find(clust_data);
-    %--Loop through each subject
-    fprintf('Extracting parameter estimates for subject:  ');
-    for isub = 1:nsub      
-        fprintf([repmat('\b',1,2),'%2.0f'],isub);
-        %-Loop through each condition
-        for icond = 1:size(r.conditions,1)
-            con_data            = spm_read_vols(con_vol{icond}(isub));
-            outdata(isub,icond) = nanmean(con_data(roi));
-        end
-    end
-    fprintf('\n');
+        roi_coord = r.roi_specs{iclust,3}; %typically this will be blank.
+        roi_radius = spm_select('FPList',r.roi_img,r.roi_specs{iclust,3});
+    end   
+    fprintf('Extracting parameter estimates for region %s...', r.roi_specs{iclust,1});  
+%Old new code
+    %-Loop through each condition
+%     for icond = 1:size(r.conditions,1)
+%         fprintf([repmat('\b',1,2),'%2.0f'],icond);
+%         roi_struct = spm8w_roigen(roi_coord,roi_radius,...
+%             conlist{icond},1,1,1); 
+%         outdata_tmp = struct2cell(roi_struct); %convert the structure to cell array
+%         outdata(:,icond) = cell2mat(outdata_tmp(5,:)');  %grab the "row" with ROI averages and convert to a matrix
+%     end
+% New new code...
+% can we make it faster? YES WE CAN! Speed loss with roigen (which started
+% at 5x slower than older method is now ~3-4 seconds faster in a typical
+% roi analysis. 
+    %For speed we need to convert conlist to one large cell array to pass
+    %to roigen.
+    conlist_tmp = [];
+    for icond = 1:size(r.conditions,1)
+        conlist_tmp = [conlist_tmp; cellstr(conlist{icond})];        
+    end   
+    %Now call roigen once on the entire set of files for a cluster/roi
+    roi_struct = spm8w_roigen(roi_coord,roi_radius,...
+             conlist_tmp,1,1,1); 
+    outdata_tmp = struct2cell(roi_struct);    %convert the structure to cell array
+    outdata_tmp = cell2mat(outdata_tmp(5,:)'); %grab the "row" with ROI averages and convert to a matrix
+    outdata = reshape(outdata_tmp,[],size(r.conditions,1)); %reshape back into values by condition
     %-Build ROI data structure
     %-Simple trick to eliminate the prefix and suffix from the con filenames
     subtmp = spm_str_manip(conlist{1},'tr');
@@ -221,15 +220,15 @@ for iclust = 1:nclust
     end
     roidata(iclust) = struct(...
                             'Region',r.roi_specs{iclust},...
-                            'ROImask',spm_str_manip(clust_vol(iclust).fname,'tr'),...
+                            'ROImask',roi_struct(1).Def,...
                             'Coords',r.roi_specs{iclust,2},... 
                             'Subject',{subnames},... 
                             'Data',outdata,... 
+                            'Voxels',size(roi_struct(1).XYZmm,2),...
                             'Conditions',{r.conditions});
+    fprintf('\nDone for ROI:%s(%d voxels)...\n', ...
+        roidata(iclust).ROImask, roidata(iclust).Voxels);           
 end
-%--Drop me a new line bro!
-fprintf('\n'); 
-%thanks!
 
 %---Print out ROI data in tab delimited
 %--Delete previous file if exists
@@ -238,7 +237,7 @@ if exist(r.data_name,'file')
 end
 %--Loop through clusters
 for currentcluster = 1:nclust
-    fprintf('Saving data for %d subjects in region %s to file %s\n',nsub,roidata(currentcluster).Region, r.data_name);
+    %fprintf('Saving data for %d subjects in region %s to file %s\n',nsub,roidata(currentcluster).Region, r.data_name);
     %-Open the file for writing
     fid = fopen(r.data_name,'a');
     if currentcluster == 1
@@ -468,104 +467,4 @@ if ~isempty(r.roi_stats)
     fprintf('\nStored in the directory: %s\n',r.roi);
 end
 %---Go home you slag!
-cd(r.root);       
-
-%---ADDITIONAL FUNCTIONS
-function sphere=make_sphere_mask(loc,radius,img,region)
-% Creates a mask containing a single sphere
-% usage: make_sphere_mask([-21 -24 0],8) creates a sphere with 8 mm radius
-% centered at MNI coordinates [-21 -24 0]
-% MODIFICATIONS:
-% -Voxels are now rounded to nearest location gridspace and user is warned.
-%  This helps catch errors but also allows for users to input coordinates
-%  that are not on the native gridspace (e.g. peaks from other studies).
-%  DDW June 2008
-% -Removes some flipping fixes that were uncessary and causing crashing on 
-%  dartmouth data (our philips data isn't flipped... I think... I hope).
-%  DDW June 2008
-% -Modified and added as part of spm8w_getdata.m (since we never use it
-%  outside of this context. Makes for cleaner files.). Also added some
-%  info to the volume description field -DDW Jan 2010
-
-%---Load standard_space.img
-v=spm_vol(img); %Fixed for spm8, spm_vol in spm8 requires explicit path.
-  
-%---Round input voxels to gridspace. This should work as long as the gridspace is isotropic.
-loc_original=loc;
-%--divide location by voxel size from v.mat and round and correct
-loc=round(loc/abs(v.mat(1,1)))*abs(v.mat(1,1)); 
-if (loc_original(1)==loc(1))==0 || (loc_original(2)==loc(2))==0 || (loc_original(3)==loc(3))==0
-    fprintf('Warning coordinates have been rounded to nearest voxel in image space\n');
-    fprintf('coordinates %s have been rounded to %s \n',num2str(loc_original),num2str(loc));
-end
-    
-%---Find the voxel that is nearest on the grid
-x=[v.mat(1,4):v.mat(1,1):v.dim(1)*v.mat(1,1)];
-y=[v.mat(2,4):v.mat(2,2):v.dim(2)*v.mat(2,2)];
-z=[v.mat(3,4):v.mat(3,3):v.dim(3)*v.mat(3,3)];
-
-%---Check that it's on grid. Our default bounding box from spm2 caused a
-%---massive fail in SPM8 here due to allowing non integers as origins
-%---causing a rounding problem and grid getting shfited in y direction.
-%---BLOOOOOOOOODY NIGHTMARE TO FIX!!!!! ended up making small adjustment 
-%---to bounding box (see spm_preprocess under normalise section). All good
-%---now... -Jan 2010 DDW
-if isempty(find(x==loc(1))) | isempty(find(y==loc(2))) | isempty(find(z==loc(3))),
-    error('the specified location is not on the grid!');
-end;
-
-%---Fix any transpose issues.
-if size(loc,1)<size(loc,2)
-    loc=loc';
-end;
-    
-%----------------Have to turn this back on for SPM8 data
-%----------------It's off for SPM2 data (no negative x in spm2)
-%---- fix for flipped images (where x dim = negative)
-%---- jm 05/10/07
-if v.mat(1,1)<0
-   v.mat(1,1)=v.mat(1,1)* -1;
-end
- 
-%---create a list of possible coordinates
-xfudge=round(2*radius/v.mat(1,1))*v.mat(1,1);
-yfudge=round(2*radius/v.mat(2,2))*v.mat(2,2);
-zfudge=round(2*radius/v.mat(3,3))*v.mat(3,3);
-XYZmm=[];
-c=1;
-
-for x=loc(1)-xfudge:v.mat(1,1):loc(1)+xfudge;
-    for y=loc(2)-yfudge:v.mat(2,2):loc(2)+yfudge;
-        for z=loc(3)-zfudge:v.mat(3,3):loc(3)+zfudge;
-        %fprintf('%d\t%d\t%d\n',x,y,z);
-        XYZmm(:,c)=[x;y;z];
-        c=c+1;
-        end;
-    end;
-end;
-
-j  = find(sum((XYZmm - loc*ones(1,size(XYZmm,2))).^2) <= radius^2);  
-maskimg=zeros(v.dim(1:3));
-  
-%----------------Have to turn this back on for SPM8 data
-%----------------It's off for SPM2 data (no negative x in spm2)
-%--- reflip x co-ordinate jm 05/10/07
-v.mat(1,1)=v.mat(1,1)*-1;
-%----------------
-  
-for i=j,
-    coord=[];
-    coord(1)=(XYZmm(1,i)-v.mat(1,4))/v.mat(1,1);
-    coord(2)=(XYZmm(2,i)-v.mat(2,4))/v.mat(2,2);
-    coord(3)=(XYZmm(3,i)-v.mat(3,4))/v.mat(3,3);
-    maskimg(coord(1),coord(2),coord(3))=1;
-end;
-  
-sphere=struct('j',j,'v',v,'maskimg',maskimg);
-
-%Temphack for center supress - DDW 2012/Sept
-%%% Fix the name and descriptions
-% v.fname=sprintf('sphere_%s_%d_%d_%d.img',region,loc_original);
-% v.descrip=sprintf('%dmm ROI mask at region %s and coordinates %d %d %d',radius,region, loc);
-% spm_write_vol(v,maskimg);
-return
+cd(r.root);

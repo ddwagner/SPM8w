@@ -363,10 +363,13 @@ end
 %--specify data: matrix of filenames and TR
 SPM.xY.P = scans;
 %--Configure and print design matrix.
-%--This is where the SPM.xX structure gets filled in that we need for
-%--demeaning 2010 DDW
+%--Trick to supress figures by presetting to invisible.SPM uses findwin so
+%--if figure already exists it will use. Doesn't work with graphics because
+%--spm_fmri_spm_ui (and subfunctions) hardcoded in a few places a command
+%--to make it visible. 
+G = spm_figure('Create','Interactive','','off');  
 SPM   = spm_fmri_spm_ui(SPM);
-G     = spm_figure('FindWin','Interactive'); close(G);
+close(G) %close G (even though it's hidden)
 F     = spm_figure('FindWin','Graphics'); set(F,'visible','off');
 
 %%% Generate orothogonality figure -March/12 DDW
@@ -435,21 +438,6 @@ printstr = ['print -dpdf -zbuffer -noui ../../',p.subj,'_',lower(glm_name),'.pdf
 eval(printstr);
 spm_figure('close',F); drawnow;
 
-%--Insert the bigmask into the design matrix. 
-%--This assumes you have only one copy of bigmask.nii in your matlab path
-%--If you have more than one copy then what the hell are you doing?
-%--Swapped bigmask.nii to p.mask which users can alter in the P file.
-mask_name = which(p.mask);
-mask_vol  = spm_vol(mask_name);
-SPM.xM.VM = mask_vol;
-SPM.xM.T  = [];
-SPM.xM.TH = ones(size(SPM.xM.TH))*(-Inf);
-SPM.xM.I  = 0;
-SPM.xM.xs = struct('Masking', sprintf('explicit masking only - using %s',p.mask));  %DDW 03/12
-%--Print mask msg
-fprintf('\n==========The SPM.mat file has been modfied. Estimating the model...');
-fprintf('\nThe model will include all voxels in the brain as defined by the mask at:\n');
-fprintf('%s\n', mask_name);
 %--Manually demean all regressors in order for SPM8 orthogonality checks to
 %--be equivalent to spm99! Everything but constant and conditions are already
 %--mean centered, reg_interest is calculated by counting regressor names in
@@ -457,7 +445,9 @@ fprintf('%s\n', mask_name);
 %--Still not sure if valid to do this for FIR models or mixed designs.
 %--Feb 2010 DDW
 if(p.demean)
-    reg_interest = size(SPM.Sess.U,2);
+    %--Print demean msg
+    fprintf('\n=====Mean centering conditions of interest...');
+      reg_interest = size(SPM.Sess.U,2);
     for i = 1:size(SPM.Sess.U,2)
         for ii = 1:size(SPM.Sess.U(i).P,2)
             if strfind(SPM.Sess.U(i).P(ii).name,'other')
@@ -470,6 +460,21 @@ if(p.demean)
         SPM.xX.X(:,i)=spm_detrend(SPM.xX.X(:,i)); %same as above but uses spm function
     end
 end
+
+%--Insert the bigmask into the design matrix. 
+%--This assumes you have only one copy of bigmask.nii in your matlab path
+%--If you have more than one copy then what the hell are you doing?
+%--Swapped bigmask.nii to p.mask which users can alter in the P file.
+mask_name = which(p.mask);
+mask_vol  = spm_vol(mask_name);
+SPM.xM.VM = mask_vol;
+SPM.xM.T  = [];
+SPM.xM.TH = ones(size(SPM.xM.TH))*(-Inf);
+SPM.xM.I  = 0;
+SPM.xM.xs = struct('Masking', sprintf('explicit masking only - using %s',p.mask));  %DDW 03/12
+%--Print mask msg
+fprintf('\n=====GLM will be estimated for all voxels as defined by the mask: %s\n', mask_name);
+
 %--Put the mask and the demeaned design regressors into the SPM structure
 save SPM SPM;
 

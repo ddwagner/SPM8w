@@ -8,7 +8,7 @@ function vxdata = spm8w_rawvx(varargin)
 % Last update: February 2013 - DDW
 % Created: April, 2012 - DDW
 % ==============================================================================
-% spm8w_rawvox([xyz],'boldfile.nii')
+% spm8w_rawvx([xyz],'boldfile.nii')
 %
 % Simple function to extract raw timeseries from a single MNI coordinate
 % XYZ. Requires at least an MNI coordinate. If no bold file is specified
@@ -19,7 +19,7 @@ function vxdata = spm8w_rawvx(varargin)
 % vx = spm8w_rawvox([21,-6,21]);
 % ==============================================================================
 % CHANGE LOG:
-%
+% 
 % =======1=========2=========3=========4=========5=========6=========7=========8
 
 %---Input checks

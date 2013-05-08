@@ -6,9 +6,9 @@ function vxdata = spm8w_roigen(varargin)
 % 
 % Heatherton & Kelley Labs
 % Last update: February 2013 - DDW
-% Created: April, 2012 - DDW
+% Created: April, 2013 - DDW
 % ==============================================================================
-% spm8w_roigen([xyz],radius or mask,['boldfile.nii'],writefile,fullmonty)
+% spm8w_roigen([xyz],radius or mask,['boldfile.nii'],write,fullmonty,noprog)
 %
 % Swiss army knife for ROI generation and value extraction. Supports single 
 % voxels (radius = 1), spheres (radius in voxels) and image masks (must be in 
@@ -22,7 +22,8 @@ function vxdata = spm8w_roigen(varargin)
 % following structure:
 %   data.Source -the source file from which values were extracted
 %   data.Def    -the ROI definition (Coordinate, sphere, radius or img mask)
-%   data.Coords -the MNI coordinates of every voxel in the ROI
+%   data.XYZmm  -the MNI coordinates of every voxel in the ROI
+%   data.volHDR -the volume header information from the source file.    
 %   data.Values -the voxel values or voxel timeseries of every voxel per input
 %               file in the ROI (this could be used for mvpa analyses). 
 %   data.Avg    -the average voxel value or voxel timeseries within the ROI. 
@@ -98,7 +99,7 @@ switch (nargin)
     fullmonty = varargin{5}; 
     noprog    = varargin{6}; 
   otherwise 
-    error('Too many paramters.'); 
+    error('Too many parameters.'); 
 end
 %---Set the mask to either user specified anatomical mask (XYZ as char)
 %---Or to bigmask. If want to change bigmask to some other default, here is
@@ -237,6 +238,7 @@ for vol_i = 1:size(vfiles,1)
     data(vol_i).Source = deblank(vfiles(vol_i,:));
     data(vol_i).Def    = spm_str_manip(mask_fname,'r'); 
     data(vol_i).XYZmm  = XYZmm(:,mask_vol(:,:,:)==1);
+    data(vol_i).volHDR = vol_hdr; %save the volhdr for later writing in same space
     data(vol_i).Values = values;
     data(vol_i).Avg    = nanmean(values,2); %average timeseries in a region
     if ~noprog  %check if no progress information is disabled.

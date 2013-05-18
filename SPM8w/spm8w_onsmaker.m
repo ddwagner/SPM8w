@@ -84,7 +84,7 @@ onsdata.subjects = txt(1,6:length(txt(1,:)));
 %Get parametric names and put into structure
 %onsdata.paranames = txt(1,3:5); NOT NECESSARY
 %Put conditions and condition length into an array (should be col2)
-tmp = txt(2:length(txt),2);
+tmp = txt(2:size(txt,1),2);
 condname(1) = tmp(1);
 condlength(1) = 1;
 current=1;

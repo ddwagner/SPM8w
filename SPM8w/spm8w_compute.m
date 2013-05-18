@@ -97,9 +97,10 @@ end
 global disable_orth
 disable_orth = p.disable_orth;
 
-%---Adjust p.nTR for hte included sessions
+%---Adjust p.nTR for the included sessions
 if ~strcmp(p.include_run,'all')
     p.glm_nTR = p.nTR(p.include_run);
+    p.nses    = numel(p.glm_nTR); %Adjust sessions to reflect the included runs
 else
     p.glm_nTR = p.nTR;
 end
@@ -108,7 +109,7 @@ end
 %%%---------------------------------------------------
 %%% User-defined parameters for this analysis
 %%%---------------------------------------------------
-SPM.nscan          = sum(p.glm_nTR);          % number of scans for each of nsess sessions
+SPM.nscan          = sum(p.glm_nTR);        % number of scans for each of nsess sessions
 SPM.xY.RT          = p.TR;                  % experiment TR in seconds
 SPM.xGX.iGXcalc    = 'None';                % global normalization: OPTIONS:'Scaling'|'None'
 SPM.xX.K.HParam    = p.hpf;                 % high-pass filter cutoff (secs) [Inf = no filtering] -------DDW CHANGE
@@ -356,20 +357,19 @@ if strcmp(p.include_run, 'all')             %Get scans for specified run. DDW Au
     scans = spm_select('FPList',p.func,['^',p.boldtok,'.*\.nii']);
     fprintf('Loading images of type: %s\n', [p.boldtok,'.nii']);
 else
-    fprintf('Loading images for run %d...\n',p.include_run);
-    scans = spm_select('FPList',p.func,['^',p.boldtok,num2str(p.include_run),'\.nii']);
+    for i = 1:p.nses
+        fprintf('Loading images for run %d...\n',p.include_run(i));
+        scans{i} = spm_select('FPList',p.func,['^',p.boldtok,num2str(p.include_run(i)),'\.nii']);
+    end
+    scans = cat(1,scans{:});
 end
-
 %--specify data: matrix of filenames and TR
 SPM.xY.P = scans;
 %--Configure and print design matrix.
-%--Trick to supress figures by presetting to invisible.SPM uses findwin so
-%--if figure already exists it will use. Doesn't work with graphics because
-%--spm_fmri_spm_ui (and subfunctions) hardcoded in a few places a command
-%--to make it visible. 
-G = spm_figure('Create','Interactive','','off');  
+%--This is where the SPM.xX structure gets filled in that we need for
+%--demeaning 2010 DDW
 SPM   = spm_fmri_spm_ui(SPM);
-close(G) %close G (even though it's hidden)
+G     = spm_figure('FindWin','Interactive'); close(G);
 F     = spm_figure('FindWin','Graphics'); set(F,'visible','off');
 
 %%% Generate orothogonality figure -March/12 DDW
@@ -438,29 +438,6 @@ printstr = ['print -dpdf -zbuffer -noui ../../',p.subj,'_',lower(glm_name),'.pdf
 eval(printstr);
 spm_figure('close',F); drawnow;
 
-%--Manually demean all regressors in order for SPM8 orthogonality checks to
-%--be equivalent to spm99! Everything but constant and conditions are already
-%--mean centered, reg_interest is calculated by counting regressor names in
-%--SPM.Sess and amount of regressors whose P has a name other than none.
-%--Still not sure if valid to do this for FIR models or mixed designs.
-%--Feb 2010 DDW
-if(p.demean)
-    %--Print demean msg
-    fprintf('\n=====Mean centering conditions of interest...');
-      reg_interest = size(SPM.Sess.U,2);
-    for i = 1:size(SPM.Sess.U,2)
-        for ii = 1:size(SPM.Sess.U(i).P,2)
-            if strfind(SPM.Sess.U(i).P(ii).name,'other')
-                reg_interest = reg_interest + 1;
-            end
-        end
-    end
-    for i = 1:reg_interest
-        %SPM.xX.X(:,i)=SPM.xX.X(:,i)-mean(SPM.xX.X(:,i));
-        SPM.xX.X(:,i)=spm_detrend(SPM.xX.X(:,i)); %same as above but uses spm function
-    end
-end
-
 %--Insert the bigmask into the design matrix. 
 %--This assumes you have only one copy of bigmask.nii in your matlab path
 %--If you have more than one copy then what the hell are you doing?
@@ -473,8 +450,29 @@ SPM.xM.TH = ones(size(SPM.xM.TH))*(-Inf);
 SPM.xM.I  = 0;
 SPM.xM.xs = struct('Masking', sprintf('explicit masking only - using %s',p.mask));  %DDW 03/12
 %--Print mask msg
-fprintf('\n=====GLM will be estimated for all voxels as defined by the mask: %s\n', mask_name);
-
+fprintf('\n==========The SPM.mat file has been modfied. Estimating the model...');
+fprintf('\nThe model will include all voxels in the brain as defined by the mask at:\n');
+fprintf('%s\n', mask_name);
+%--Manually demean all regressors in order for SPM8 orthogonality checks to
+%--be equivalent to spm99! Everything but constant and conditions are already
+%--mean centered, reg_interest is calculated by counting regressor names in
+%--SPM.Sess and amount of regressors whose P has a name other than none.
+%--Still not sure if valid to do this for FIR models or mixed designs.
+%--Feb 2010 DDW
+if(p.demean)
+    reg_interest = size(SPM.Sess.U,2);
+    for i = 1:size(SPM.Sess.U,2)
+        for ii = 1:size(SPM.Sess.U(i).P,2)
+            if strfind(SPM.Sess.U(i).P(ii).name,'other')
+                reg_interest = reg_interest + 1;
+            end
+        end
+    end
+    for i = 1:reg_interest
+        %SPM.xX.X(:,i)=SPM.xX.X(:,i)-mean(SPM.xX.X(:,i));
+        SPM.xX.X(:,i)=spm_detrend(SPM.xX.X(:,i)); %same as above but uses spm function
+    end
+end
 %--Put the mask and the demeaned design regressors into the SPM structure
 save SPM SPM;
 
@@ -607,8 +605,12 @@ regressors = [];
 if p.outliers
     count = 1;
     for i = 1:p.nses  %Make a variable per outlier, adjusting for run lenghths
-        if exist(fullfile(p.func,['outliers_run',num2str(i),'.txt']),'file')    
-            outliers{i} = load(fullfile(p.func,['outliers_run',num2str(i),'.txt']));
+        if exist(fullfile(p.func,['outliers_run',num2str(i),'.txt']),'file')   
+            if strcmp(p.include_run,'all')    
+                outliers{i} = load(fullfile(p.func,['outliers_run',num2str(i),'.txt']));
+            else
+                outliers{i} = load(fullfile(p.func,['outliers_run',num2str(p.include_run(i)),'.txt']));
+            end                
             fprintf('===Loading outliers file for run: %d...\n',i);     
             for j = 1:length(outliers{i})
                 str=['out',num2str(count),' = zeros(',num2str(total_tps),',1);'];            eval(str);
@@ -653,13 +655,16 @@ regressors = [regressors, polys];      % add linear trends
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if p.move   
     realign = [];
-    if p.include_run == 'all'      %Changed to grab realignment files for spec'd runs - August 2010
+    if strcmp(p.include_run,'all')      %Changed to grab realignment files for spec'd runs - August 2010
         for i = 1:p.nses
             realign{i} = load(fullfile(p.func,['rp_',p.rptok,num2str(i),'.txt'])); 
         end
         realign  = cat(1,realign{:});
     else
-        realign = load(fullfile(p.func,['rp_',p.rptok,num2str(p.include_run),'.txt']));
+        for i = 1:p.nses
+            realign{i} = load(fullfile(p.func,['rp_',p.rptok,num2str(p.include_run(i)),'.txt'])); 
+        end
+        realign  = cat(1,realign{:});
     end    
     %%% Insert realignment regressors into regressors variable
     %%% fill last n cols of regressor matrix, leaving first 

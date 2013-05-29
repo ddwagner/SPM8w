@@ -5,7 +5,7 @@ function roidata=spm8w_roitool(varargin)
 % other commonly used analyses (roi, ppi, mixed).
 % 
 % Heatherton & Kelley Labs
-% Last update: March, 2013 - DDW
+% Last update: May, 2013 - DDW
 % Created: May, 2010 - DDW
 % ==============================================================================
 % function spm8w_roitool('roi_studyname_file', [coordinate], size)
@@ -68,6 +68,7 @@ function roidata=spm8w_roitool(varargin)
 % -Incorporated new roigen tool replacing make_sphare_mask. Also faster if
 % called correctly (i.e., give it lists of files, don't call it every
 % single subject or it will be slower than old method). -DDW April/13
+% -Added support to split correlations by group (correl2) -DDW May/13
 % =======1=========2=========3=========4=========5=========6=========7=========8
 
 %---Input checks
@@ -207,10 +208,10 @@ for iclust = 1:nclust
         conlist_tmp = [conlist_tmp; cellstr(conlist{icond})];        
     end   
     %Now call roigen once on the entire set of files for a cluster/roi
-    roi_struct = spm8w_roigen(roi_coord,roi_radius,...
-             conlist_tmp,1,1,1); 
+    roi_struct = spm8w_roigen(roi_coord,roi_radius,conlist_tmp,1,1,1); 
     outdata_tmp = struct2cell(roi_struct);    %convert the structure to cell array
-    outdata_tmp = cell2mat(outdata_tmp(5,:)'); %grab the "row" with ROI averages and convert to a matrix
+    outdata_tmp = cell2mat(outdata_tmp(5,:)'); %grab the "row" with ROI values and convert to a matrix
+    outdata_tmp = mean(outdata_tmp,2);         %Average across rows to get an ROI avg per condition/per subj
     outdata = reshape(outdata_tmp,[],size(r.conditions,1)); %reshape back into values by condition
     %-Build ROI data structure
     %-Simple trick to eliminate the prefix and suffix from the con filenames
@@ -448,8 +449,72 @@ if ~isempty(r.roi_stats)
                             p_star = '';
                         end
                         %print results 
-                        fprintf('\t==Correlation (Var: %s) on Condition: %s\n',xls_ctitles{corr_i-2}, evalthis);
+                        fprintf('\t==Correlation (Var:%s) on Condition:%s\n',xls_ctitles{corr_i-2}, evalthis);
                         fprintf('\tCorrelation: r=%4.2f, p=%4.3f %s\n',rcorr,p,p_star);                                                     
+                    end
+				%Do CORREL2
+                elseif strcmpi(r.roi_stats(i_stat),'correl2')
+                    %Do t-test2 on every possible pair of groups (if more than 2)
+                    %Since groups depend on match to xls_group (and not
+                    %just on xls_group). Determine matching now.
+                    for i_subs = 1:size(roidata(1).Subject,1)
+                        %find index of matching subject in xls data
+                        subidx = find(strcmpi(xls_subjects,roidata(1).Subject{i_subs}));
+                        if isempty(subidx)
+                            error('Subject %s does not exist in %s...', condata{i_subs,2},r.var_file);
+                        else
+                            SubjectGroup(i_subs,1) = xls_group(subidx);
+                        end
+                    end                    
+                    numGroups = length(unique(SubjectGroup));
+                    %build up a cell array of data. 
+                    condata      = num2cell(eval(evalthis));
+                    condata(:,2) = roidata(i).Subject;
+                    condata(:,3) = num2cell(SubjectGroup);
+                    %now iterate and add corrvalues according to the xlsread data
+                    for i_subs = 1:size(condata,1)
+                        %find index of matching subject in xls data
+                        subidx = find(strcmpi(xls_subjects,condata{i_subs,2}));
+                        if isempty(subidx)
+                            error('Subject %s does not exist in %s...', condata{i_subs,2},r.var_file);
+                        else
+                            for i_cors = 1:size(xls_cvars,2)
+                                condata{i_subs,i_cors+3} = xls_cvars(subidx,i_cors);
+                            end
+                        end
+                    end
+                    for corr_i = 4:size(condata,2)
+                        for i_group = 1:numGroups   
+                            %do correlations
+                            voxdata = cell2mat(condata(ismember(cell2mat(condata(:,3)),i_group),1));
+                            cordata = cell2mat(condata(ismember(cell2mat(condata(:,3)),i_group),corr_i));
+                            %find groupID label
+                            grp_label = xls_groupID(find(xls_group == i_group));        
+                            [rcorr,p] = corrcoef(voxdata,cordata);     
+                            %check if only one subject (i.e. example data)
+                            %and grab only the corr we need
+                            if length(voxdata) == 1
+                                rcorr = NaN;
+                                p = NaN;
+                            else
+                                rcorr=rcorr(1,2);
+                                p=p(1,2);
+                            end
+                            %add sigstars to them pvalues
+                            switch logical(true)
+                            case p < 0.001
+                                p_star = '***';
+                            case p < 0.01
+                                p_star = '**';                                                       
+                            case p < 0.05
+                                p_star = '*';
+                            otherwise
+                                p_star = '';
+                            end
+                            %print results 
+                            fprintf('\t==Correlation (Var:%s Grp:%s) on Condition:%s\n',xls_ctitles{corr_i-3}, grp_label{1},evalthis);
+                            fprintf('\tCorrelation: r=%4.2f, p=%4.3f %s\n',rcorr,p,p_star);                                                     
+                        end  
                     end
                 else
                     fprintf('Invalid stat... Basic statistics recognizes only descriptives, t-test1, t-test2 and correl\n');                                       

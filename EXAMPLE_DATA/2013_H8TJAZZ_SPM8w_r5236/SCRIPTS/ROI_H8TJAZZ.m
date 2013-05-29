@@ -10,7 +10,7 @@ roi_dir       = 'H8TJAZZ';           %dir where ROI results will be written
 rfx_dir       = 'RFX_H8TJAZZ';       %dir containing con files for ROI 
 roi_img_dir   = 'ROI_images';        %dir containing anatomical or functional masks <optional>
 roi_spec_file = 'h8tjazz_spec.xlsx'; %File containing the roi specifications
-roi_var_file  = 'h8tjazz_var.xlsx';  %Name of excel file with variables for ttest and correl
+roi_var_file  = 'h8tjazz.xlsx';      %Name of excel file with variables for ttest and correl
 data_name     = 'H8TJAZZ.txt';       %Name of data file
     
 %---ROI SPECFICIATIONS
@@ -36,11 +36,13 @@ r.roi_stats = {
 		%Performs one or two sample t-tests, correlations and descriptives
         %'all_conditions is a reserved word. Otherwise type the
         %condition name or a formula.
+        %valid stats: descriptives, t-test1,t-test2,correl,correl2
   	    %STATISTIC-------CONDITION/FORMULA
     	'descriptives'   'all_conditions' 
 	    't-test1'        'humVSbas-(aniVSbas+vegVSbas+minVSbas)/3'
 	    't-test1'        'humVSbas'
 	    'correl'         'vegVSbas-minVSbas'
+        'correl2'        'humVSbas'
    		't-test2'        'humVSbas-aniVSbas'
     		  };
                              

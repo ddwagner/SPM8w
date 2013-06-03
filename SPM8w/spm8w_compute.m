@@ -269,7 +269,7 @@ if ~isempty(p.block_cond) %If there are no events, then pure block design
         if ~exist(onsets,'file')
             error('Error, Cannot find the file: %s... Are you sure it exists?\n',spm_str_manip(onsets,'t'));     
         end
-        fprintf('===Loading block onset file: %s...\n',spm_str_manip(onsets,'t'));          
+        fprintf('===Loading block onset file: %s...',spm_str_manip(onsets,'t'));          
         onsfile = spm_load(onsets);
         durat = fullfile(p.onsets,[p.duration_prefix,p.block_cond{x},'_dur',p.onsets_ext]);
         %--Check for existence of _dur files.

@@ -48,6 +48,7 @@ p.polyord       = 1;     %Order of polynomials: 0:Const|1:Linear|2:Quad|3:Cubic
 p.move          = 1;     %Include motion regressors?
 p.outliers      = 1;     %Include outlier scans as nuissance? (use spm8w_art.m)
 p.demean        = 0;     %Demean condition regressors ala SPM99?
+p.duration      = 0;     %Event/Block Duration in TR or SEC. Dur files will override.
 p.durtime       = 0;     %Event duration in seconds? (will be divided by p.TR)
 p.disable_orth  = 1;     %Disable w/i trial orth (1) or enable it (0, SPM default)
 

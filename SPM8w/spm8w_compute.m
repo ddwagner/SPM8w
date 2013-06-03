@@ -70,6 +70,8 @@ function spm8w_compute(varargin)
 % -Fixed bug with outliers code (oops, wrong exist var) -DDW June/12
 % -Added DARTEL & VBM8 support -DDW Sept/12
 % -Added support for different number of TRs per run. 
+% -Added p.duration for cases where evetns/blocks are constant dur. -DDW
+% May/13
 % =======1=========2=========3=========4=========5=========6=========7=========8
 
 %--Input checks
@@ -185,36 +187,45 @@ if ~isempty(p.event_cond)
         if ~exist(onsets,'file')
             error('Error, Cannot find the file: %s... Are you sure it exists?\n',spm_str_manip(onsets,'t'));     
         end
-        fprintf('===Loading event onset file: %s...\n',spm_str_manip(onsets,'t'));     
+        fprintf('===Loading event onset file: %s...',spm_str_manip(onsets,'t'));     
         %--LOAD ONSETS
         onsfile = spm_load(onsets);
         %--Make column vector if row vector
         if size(onsfile,1) < size(onsfile,2); onsfile=onsfile'; end
-        %--Assign names and onsets to SPM structure
-        SPM.Sess.U(x).name = {p.event_cond{x}};                      % string in cell
-        SPM.Sess.U(x).ons  = onsfile;                                % onsets in scans
         %--Durations
         durat = fullfile(p.onsets,[p.duration_prefix,p.event_cond{x},'_dur',p.onsets_ext]);
         %--Check for existence of _dur files.
-        if exist(durat, 'file');
+        if exist(durat, 'file')
             %-PRINT INFO 
-            fprintf('Loading event duration file: %s...\n',spm_str_manip(durat,'t'));     
+            fprintf('\nLoading event duration file: %s... \n',spm_str_manip(durat,'t'));     
             %-LOAD DURATIONS
-            durfile = spm_load(durat);
-            %-Divide by TR only if user requested.
-            if (p.durtime)
-                durfile = durfile/p.TR;
-                fprintf(['Durations in seconds, dividing by '...
-                        'TR of%4.1f\n'],p.TR);
-            end
+            durations = spm_load(durat);
             %-Make column vector if row vector
-                if size(durfile,1) < size(durfile,2); durfile=durfile'; end
-            %-Assign to SPM structure
-                SPM.Sess.U(x).dur = durfile;
+            if size(durations,1) < size(durations,2); durations=durations'; end   
         else
-                SPM.Sess.U(x).dur = 0;
+            durations = p.duration;
         end
-        param = fullfile(p.onsets,[p.para_prefix,p.event_cond{x},'_par', p.onsets_ext]);     
+        %--If dur in seconds, divide by TR.
+        if (p.durtime)
+            if ~exist(durat,'file')
+                fprintf(['Durations (%d) in seconds, dividing by '...
+                        'TR of%4.1f\n'],durations,p.TR);
+            else
+                fprintf(['Durations in seconds, dividing by '...
+                        'TR of%4.1f\n'],p.TR);  
+            end
+            durations = durations/p.TR;
+        else           
+            if ~exist(durat,'file')
+                fprintf('Duration: %dTRs...\n',durations);
+            end
+        end
+        %--Assign names and onsets to SPM structure
+        SPM.Sess.U(x).name = {strrep(p.event_cond{x},'_','-')};   % string in cell
+        SPM.Sess.U(x).ons  = onsfile;                             % onsets in scans        
+        SPM.Sess.U(x).dur = durations;                            % durations in scans
+        %--CHECK FOR PARAM FILES    
+        param = fullfile(p.onsets,[p.para_prefix,p.event_cond{x},'_par', p.onsets_ext]);
         par1  = fullfile(p.onsets,[p.para_prefix,p.event_cond{x},'_par1',p.onsets_ext]);    
         par2  = fullfile(p.onsets,[p.para_prefix,p.event_cond{x},'_par2',p.onsets_ext]);   
         par3  = fullfile(p.onsets,[p.para_prefix,p.event_cond{x},'_par3',p.onsets_ext]);  
@@ -261,30 +272,41 @@ if ~isempty(p.block_cond) %If there are no events, then pure block design
         fprintf('===Loading block onset file: %s...\n',spm_str_manip(onsets,'t'));          
         onsfile = spm_load(onsets);
         durat = fullfile(p.onsets,[p.duration_prefix,p.block_cond{x},'_dur',p.onsets_ext]);
-        if exist(durat, 'file');
-            fprintf('Loading block duration file: %s...\n',spm_str_manip(durat,'t'));     
-            durfile=spm_load(durat);
+        %--Check for existence of _dur files.
+        if exist(durat, 'file')
+            %-PRINT INFO 
+            fprintf('\nLoading block duration file: %s... \n',spm_str_manip(durat,'t'));     
+            %-LOAD DURATIONS
+            durations = spm_load(durat);
+            %-Make column vector if row vector
+            if size(durations,1) < size(durations,2); durations=durations'; end          
         else
-        error(['Unable to find duration file for block file %s\n' ...
-                'Block designs require a duration file (in TR or seconds)\n'],spm_str_manip(onsets,'t'));
+            durations = p.duration;
         end
-        %--Divide by TR only if user requested. Now works for block
-        %--designs - DDW Apr/10
+        %--If dur in seconds, divide by TR.
         if (p.durtime)
-            durfile=durfile/p.TR;
-            fprintf(['Durations in seconds, dividing by '...
-                     'TR of%4.1f\n'],p.TR);
+            if ~exist(durat,'file')
+                fprintf(['Durations (%d) in seconds, dividing by '...
+                        'TR of%4.1f\n'],durations,p.TR);
+            else
+                fprintf(['Durations in seconds, dividing by '...
+                        'TR of%4.1f\n'],p.TR);  
+            end
+            durations = durations/p.TR;
+        else           
+            if ~exist(durat,'file')
+                fprintf('Duration: %dTRs...\n',durations);
+            end
         end
         %--Make column vector if row vector
         if size(onsfile,1) < size(onsfile,2); onsfile=onsfile'; end
-        if size(durfile,1) < size(durfile,2); durfile=durfile'; end
         %--Determine design type
         if ~isempty(p.block_cond) && isempty(p.event_cond)      %BLOCK DESIGN
             %-Assign names and onsets to SPM structure
-            SPM.Sess.U(x).name   = {p.block_cond{x}};     % string in cell
+            SPM.Sess.U(x).name   = {strrep(p.block_cond{x},'_','-')}; % string in cell
             SPM.Sess.U(x).ons    = onsfile;               % onsets in scans
             SPM.Sess.U(x).P.name = 'none';                % no paras for block designs  
-            SPM.Sess.U(x).dur    = durfile; 
+            SPM.Sess.U(x).dur    = durations; 
         elseif ~isempty(p.block_cond) && ~isempty(p.event_cond) %MIXED DESIGN
             fprintf('Events and blocks are specified, treating %s as user regressor (no HRF convolution)...\n',spm_str_manip(onsets,'t'));     
             onsfile    = onsfile + 1; %%%Fix for block indexing problem - march 2010 - ddw
@@ -292,14 +314,12 @@ if ~isempty(p.block_cond) %If there are no events, then pure block design
             %-Specify Condition Block Variables
             state_data = zeros((sum(p.glm_nTR)),1);
             %-Add Condition Block Onsets to Condition Block Variable
-            %-Removed p.block_length and replaced with call to block specific
-            %-durfile - Feb 2010 - DDW
             for i = 1:length(onsfile);
-                state_data(onsfile(i):(onsfile(i)+durfile(i)),1) = 1;
+                state_data(onsfile(i):(onsfile(i)+durations(i)),1) = 1;
             end
             %-Assign names and onsets to SPM structure
             SPM.Sess.C.C(:,end+1)  = state_data;
-            SPM.Sess.C.name{end+1} = p.block_cond{x};
+            SPM.Sess.C.name{end+1} = {strrep(p.block_cond{x},'_','-')};
             %-Removed convolving blocks with HRF based on new info from GW&LHS -DDW
             %-Truncate State Variable so that its the Same Length as the Scan Length
             %-block(x).state=state_tmp(1:(p.nses*p.nTR)); %not necessary
@@ -333,7 +353,7 @@ if ~isempty(p.reg_cond) && isempty(p.event_cond) && isempty(p.block_cond) %then 
         end
         %--Assign names and regressors to SPM structure  
         SPM.Sess.C.C(:,end+1)  = onsfile;
-        SPM.Sess.C.name{end+1} = p.reg_cond{x};   
+        SPM.Sess.C.name{end+1} = {strrep(p.reg_cond{x},'_','-')};   
     end %for x=1:length(p_reg_cond)
 elseif ~isempty(p.reg_cond)
     error(['For now event/block and regressor designs are disabled\n' ...

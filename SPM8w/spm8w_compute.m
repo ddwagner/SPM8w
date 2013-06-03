@@ -319,7 +319,7 @@ if ~isempty(p.block_cond) %If there are no events, then pure block design
             end
             %-Assign names and onsets to SPM structure
             SPM.Sess.C.C(:,end+1)  = state_data;
-            SPM.Sess.C.name{end+1} = {strrep(p.block_cond{x},'_','-')};
+            SPM.Sess.C.name{end+1} = strrep(p.block_cond{x},'_','-');
             %-Removed convolving blocks with HRF based on new info from GW&LHS -DDW
             %-Truncate State Variable so that its the Same Length as the Scan Length
             %-block(x).state=state_tmp(1:(p.nses*p.nTR)); %not necessary

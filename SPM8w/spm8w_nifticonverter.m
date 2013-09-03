@@ -172,10 +172,18 @@ for i = 1:length(subjects)
     %--Anatomical moving and renaming
     mrifile = dir(fullfile(p.nifti,'*T1TFE*.nii'));
     if ~isempty(mrifile)
-        fprintf('Renaming %s to %s\n',mrifile.name,'mprage.nii and compressing...'); 
-        movefile(fullfile(p.nifti,mrifile.name),fullfile(p.nifti,'mprage.nii'));
-        gzip(fullfile(p.nifti,'mprage.nii'));
-        delete(fullfile(p.nifti,'mprage.nii'));
+        for i_mri = 1:size(mrifile,1)
+            if i_mri == 2
+                mriname = 'mprage_halfandhalf.nii';
+                fprintf('WARNING: Found a 2nd T1TFE file, assuming it is mprage half-and-half...\n');
+            else
+                mriname = 'mprage.nii';
+            end
+            fprintf('Renaming %s to %s and compressing...\n',mrifile(i_mri).name,mriname); 
+            movefile(fullfile(p.nifti,mrifile(i_mri).name),fullfile(p.nifti,mriname));
+            gzip(fullfile(p.nifti,mriname));
+            delete(fullfile(p.nifti,mriname));
+        end
     end
     %--DTI moving and renaming 
     dtifiles = dir(fullfile(p.nifti,'*DwiSE*.nii'));

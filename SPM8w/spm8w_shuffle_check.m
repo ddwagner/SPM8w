@@ -29,6 +29,7 @@ function data = spm8w_shuffle_check(epi_dir, file_stub, nslice)
 % ==============================================================================
 % CHANGE LOG:
 % -Overhauled code to level up shuffle check to SPM8 compatbility -DDW Dec/09
+% -Fixed very old bug in slice error checking - DDW Sep/13
 % =======1=========2=========3=========4=========5=========6=========7=========8
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -55,7 +56,7 @@ nvol = length(V);
 if (nargin < 3)
     nslice = V(1).dim(3);
 elseif (nslice ~= V(1).dim(3))
-    error (['User input slices (e.g. ', num2str(nslice), ') do not match slices in file (#slices = ',num2str(vol_tmp.dat.dim(3)),')']);
+    error ('User input slices (p.nTE: %d) do not match slices in file (%s.nii slices: %d)...', nslice, file_stub, V(1).dim(3)) 
 end
 
 %Tell user what's going on

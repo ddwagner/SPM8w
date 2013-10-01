@@ -72,6 +72,8 @@ function spm8w_compute(varargin)
 % -Added support for different number of TRs per run. 
 % -Added p.duration for cases where evetns/blocks are constant dur. -DDW
 % May/13
+% -Chnaged the way p.include_run behaves (you know keep p.nses to the full
+% runs, see manual). Sep/13
 % =======1=========2=========3=========4=========5=========6=========7=========8
 
 %--Input checks
@@ -99,12 +101,15 @@ end
 global disable_orth
 disable_orth = p.disable_orth;
 
-%---Adjust p.nTR for the included sessions
+%---Adjust p.nses, p.nTR and p.include_run for the included sessions
+%---This should go in the private part of the P file but I don't want to
+%---make people change until next full release
 if ~strcmp(p.include_run,'all')
     p.glm_nTR = p.nTR(p.include_run);
-    p.nses    = numel(p.glm_nTR); %Adjust sessions to reflect the included runs
+    p.nses = length(p.include_run);
 else
     p.glm_nTR = p.nTR;
+    p.include_run = 1:p.nses;
 end
 
 %---Set Defaults
@@ -187,7 +192,7 @@ if ~isempty(p.event_cond)
         if ~exist(onsets,'file')
             error('Error, Cannot find the file: %s... Are you sure it exists?\n',spm_str_manip(onsets,'t'));     
         end
-        fprintf('===Loading event onset file: %s...',spm_str_manip(onsets,'t'));     
+        fprintf('===Loading event onset file: %s...\n',spm_str_manip(onsets,'t'));     
         %--LOAD ONSETS
         onsfile = spm_load(onsets);
         %--Make column vector if row vector
@@ -373,18 +378,17 @@ spm('Defaults','fmri');
 
 %--Get filenames for functional scans
 clear scans;
-if strcmp(p.include_run, 'all')             %Get scans for specified run. DDW Aug/10
-    scans = spm_select('FPList',p.func,['^',p.boldtok,'.*\.nii']);
-    fprintf('Loading images of type: %s\n', [p.boldtok,'.nii']);
-else
-    for i = 1:p.nses
-        fprintf('Loading images for run %d...\n',p.include_run(i));
-        scans{i} = spm_select('FPList',p.func,['^',p.boldtok,num2str(p.include_run(i)),'\.nii']);
-    end
-    scans = cat(1,scans{:});
+if strcmp(p.include_run, 'all')  %Convert 'all' to a list of runs
+    p.include_run = 1:p.nses;
 end
+fprintf('Loading images of type: %s\n', [p.boldtok,'.nii']);
+for srun_i = 1:p.nses
+    fprintf('Loading images for run %d (nTR = %d)...\n',p.include_run(srun_i),p.glm_nTR(srun_i));
+    scans{srun_i} = spm_select('FPList',p.func,['^',p.boldtok,num2str(p.include_run(srun_i)),'\.nii']);
+end
+
 %--specify data: matrix of filenames and TR
-SPM.xY.P = scans;
+SPM.xY.P = char(scans);  %SPM expects a char array not a cell array
 %--Configure and print design matrix.
 %--This is where the SPM.xX structure gets filled in that we need for
 %--demeaning 2010 DDW
@@ -625,13 +629,9 @@ regressors = [];
 if p.outliers
     count = 1;
     for i = 1:p.nses  %Make a variable per outlier, adjusting for run lenghths
-        if exist(fullfile(p.func,['outliers_run',num2str(i),'.txt']),'file')   
-            if strcmp(p.include_run,'all')    
-                outliers{i} = load(fullfile(p.func,['outliers_run',num2str(i),'.txt']));
-            else
-                outliers{i} = load(fullfile(p.func,['outliers_run',num2str(p.include_run(i)),'.txt']));
-            end                
-            fprintf('===Loading outliers file for run: %d...\n',i);     
+        if exist(fullfile(p.func,['outliers_run',num2str(p.include_run(i)),'.txt']),'file')    
+            outliers{i} = load(fullfile(p.func,['outliers_run',num2str(p.include_run(i)),'.txt']));
+            fprintf('===Loading outliers file for run: %d...\n',p.include_run(i));     
             for j = 1:length(outliers{i})
                 str=['out',num2str(count),' = zeros(',num2str(total_tps),',1);'];            eval(str);
                 str=['out',num2str(count),'(',num2str(outliers{i}(j)+(i-1)*p.glm_nTR(i)),') = 1;']; eval(str);
@@ -649,13 +649,13 @@ if p.outliers
     end
 end   
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%        
 % Build polynomial regressors and session means
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 polys = zeros((total_tps),(p.polyord+1)*p.nses-1); % init polynomial regs
 count = 1;
 for i = 1:p.nses
+    fprintf('===Generating polynomial regressors for run: %d...\n',p.include_run(i));     
     for ii = 1:p.polyord
         polys(i*p.glm_nTR(i)-p.glm_nTR(i)+1:i*p.glm_nTR(i),count) = linspace(-1,1,p.glm_nTR(i)).^ii';
         count = count + 1;
@@ -667,7 +667,6 @@ for i = 1:p.nses-1
     polys(i*p.glm_nTR(i)-p.glm_nTR(i)+1:i*p.glm_nTR(i),count) = linspace(-1,1,p.glm_nTR(i)).^ii';
     count = count + 1;
 end
-
 regressors = [regressors, polys];      % add linear trends
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -675,17 +674,11 @@ regressors = [regressors, polys];      % add linear trends
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if p.move   
     realign = [];
-    if strcmp(p.include_run,'all')      %Changed to grab realignment files for spec'd runs - August 2010
-        for i = 1:p.nses
-            realign{i} = load(fullfile(p.func,['rp_',p.rptok,num2str(i),'.txt'])); 
-        end
-        realign  = cat(1,realign{:});
-    else
-        for i = 1:p.nses
-            realign{i} = load(fullfile(p.func,['rp_',p.rptok,num2str(p.include_run(i)),'.txt'])); 
-        end
-        realign  = cat(1,realign{:});
-    end    
+    for i = 1:p.nses
+        fprintf('===Loading realignment parameters file for run: %d...\n',p.include_run(i));     
+        realign{i} = load(fullfile(p.func,['rp_',p.rptok,num2str(p.include_run(i)),'.txt'])); 
+    end
+    realign  = cat(1,realign{:});   
     %%% Insert realignment regressors into regressors variable
     %%% fill last n cols of regressor matrix, leaving first 
     %%% (2*runs)-1 free for trends and means 

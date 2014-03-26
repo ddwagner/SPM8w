@@ -358,7 +358,7 @@ if ~isempty(p.reg_cond) && isempty(p.event_cond) && isempty(p.block_cond) %then 
         end
         %--Assign names and regressors to SPM structure  
         SPM.Sess.C.C(:,end+1)  = onsfile;
-        SPM.Sess.C.name{end+1} = {strrep(p.reg_cond{x},'_','-')};   
+        SPM.Sess.C.name{end+1} = strrep(p.reg_cond{x},'_','-');   
     end %for x=1:length(p_reg_cond)
 elseif ~isempty(p.reg_cond)
     error(['For now event/block and regressor designs are disabled\n' ...

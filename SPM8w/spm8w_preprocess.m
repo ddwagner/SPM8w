@@ -505,7 +505,7 @@ if(p.snr)
     for ses = 1:p.nses
         files  = V{ses};
         scalf  = files(1).private.dat.scl_slope;
-        if scalf > 1
+        if scalf > 0
             fprintf('\nData will be scaled by %.2f prior to SNR calcualtion...\n', scalf);
         end
         data   = spm_read_vols(files(1));
@@ -516,7 +516,7 @@ if(p.snr)
         for i = 1:n
              diagmsg = 'Calculating average signal on volume:';
              fprintf([repmat('\b',1,(length(diagmsg) + 1 +length(num2str(i)))),'%s %d'], diagmsg, i);             
-             data    = spm_read_vols(files(i))/scalf; %scale data prior to calc
+             data    = spm_read_vols(files(i))*scalf; %scale data prior to calc
              avg     = avg+data/n;
         end
         fprintf('\n');
@@ -560,7 +560,11 @@ if(p.snr)
         files_snr   = spm_vol(fullfile(p.root,['SNR_',upper(p.logsuffix),'/SNR'],[p.subj,'_snr_run',num2str(ses),'.nii']));
         data_avg    = spm_read_vols(files_avg);
         data_sd     = spm_read_vols(files_sd);
-        data_snr    = spm_read_vols(files_snr);       
+        data_snr    = spm_read_vols(files_snr);
+        % Scale data for display purposes /  different scanners 
+	scaleavg = max(data_avg(:))/900;
+	data_avg = data_avg/scaleavg;
+	data_sd = data_sd/scaleavg;       
         %-Slices
         slice{1} = squeeze(data_avg(:,:,20));   stitles{1} = 'Average 1';   sthresh{1} = [10,900];
         slice{2} = squeeze(data_avg(:,:,24));   stitles{2} = 'Average 2';   sthresh{2} = [10,900];

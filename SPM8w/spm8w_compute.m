@@ -201,7 +201,7 @@ if ~isempty(p.event_cond)
             %-LOAD DURATIONS
             durfile = spm_load(durat);
             %-Divide by TR only if user requested.
-            if (p.durtime) && strcmp(p.time,'secs')
+            if (p.durtime) && ~strcmp(p.time,'secs')
                 durfile = durfile/p.TR;
                 fprintf(['Durations in seconds, dividing by '...
                         'TR of%4.1f\n'],p.TR);
